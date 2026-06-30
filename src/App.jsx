@@ -232,8 +232,8 @@ function makeSeed() {
 }
 
 /* ---------- api proxy ---------- */
-async function callClaude({ system, messages, useSearch = false }) {
-  const body = { model: MODEL, max_tokens: 1000, messages };
+async function callClaude({ system, messages, useSearch = false, maxTokens = 1000 }) {
+  const body = { model: MODEL, max_tokens: maxTokens, messages };
   if (system) body.system = system;
   if (useSearch) body.tools = [{ type: "web_search_20260209", name: "web_search" }];
   const res = await fetch("/api/claude", {
@@ -494,7 +494,8 @@ export default function App() {
       const mod = moduleOfLesson(lesson.id);
       const text = await callClaude({
         system: GEN_SYSTEM,
-        messages: [{ role: "user", content: `Write the lesson titled "${lesson.title}" (in ${mod ? mod.title : "the course"}).` }]
+        messages: [{ role: "user", content: `Write the lesson titled "${lesson.title}" (in ${mod ? mod.title : "the course"}).` }],
+        maxTokens: 4096
       });
       if (!text) throw new Error("empty");
       updateModules((prev) => prev.map((m) => ({ ...m, lessons: m.lessons.map((l) => l.id === lesson.id ? { ...l, content: text } : l) })));
@@ -571,7 +572,7 @@ export default function App() {
     updateDoubts((prev) => [...prev, { id: entryId, q, a: "", placementText: "", targetLessonId: null, videoQuery: q, videos: [], pending: true }]);
     setQuestion("");
     try {
-      const text = await callClaude({ system: askSystem(modules), messages: [{ role: "user", content: q }] });
+      const text = await callClaude({ system: askSystem(modules), messages: [{ role: "user", content: q }], maxTokens: 1500 });
       const parsed = extractJson(text);
       const safe = parsed && parsed.answer
         ? parsed
