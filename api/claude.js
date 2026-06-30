@@ -9,15 +9,12 @@ export default async function handler(req, res) {
   }
 
   const body = req.body;
-  const usesWebSearch = Array.isArray(body?.tools) &&
-    body.tools.some((t) => t.type === "web_search_20250305");
 
   const headers = {
     "Content-Type": "application/json",
     "x-api-key": apiKey,
     "anthropic-version": "2023-06-01",
   };
-  if (usesWebSearch) headers["anthropic-beta"] = "web-search-1";
 
   const upstream = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

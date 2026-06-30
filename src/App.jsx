@@ -235,7 +235,7 @@ function makeSeed() {
 async function callClaude({ system, messages, useSearch = false }) {
   const body = { model: MODEL, max_tokens: 1000, messages };
   if (system) body.system = system;
-  if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+  if (useSearch) body.tools = [{ type: "web_search_20260209", name: "web_search" }];
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -274,7 +274,10 @@ function askSystem(modules) {
     .join("\n");
   return (
     PERSONA +
-    "\n\nAnswer the student's question, then decide where it belongs in her curriculum below.\n" +
+    "\n\nThe student may ask a genuine music theory / vocal technique question, OR send a meta-command or chit-chat that has nothing to do with music (e.g. \"clear chat\", \"reset\", \"delete this\", \"start over\", \"hello\", \"thanks\", \"help\"). " +
+    "If the message is NOT a genuine music/vocal question, respond with ONLY this JSON and nothing else:\n" +
+    '{"answer":"Sorry, I can only answer music theory and vocal technique questions here. Use the Reset button in the sidebar to clear your curriculum.","fits":"none","moduleId":null,"lessonId":null,"newLessonTitle":null,"videoQuery":null}\n\n' +
+    "Otherwise, answer the student's question, then decide where it belongs in her curriculum below.\n" +
     "Respond with ONLY raw JSON, no code fences, no commentary, shaped exactly like:\n" +
     '{"answer":"<concise markdown answer; use ## subheads, **bold**, - bullets, ``` for diagrams; keep under ~250 words>","fits":"existing"|"new","moduleId":"<module id>","lessonId":"<lesson id or null>","newLessonTitle":"<short title or null>","videoQuery":"<a good youtube search query for this concept>"}\n' +
     'Use "existing" only if the concept genuinely belongs inside a listed lesson. Otherwise use "new", give a short newLessonTitle, and the best fitting moduleId. Use ids exactly as listed.\n\nCurriculum:\n' +
@@ -311,7 +314,7 @@ function inline(str) {
   const nodes = [];
   let rest = str;
   let k = 0;
-  const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/;
+  const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`)/;
   let m;
   while ((m = rest.match(re))) {
     const idx = m.index;
@@ -319,7 +322,9 @@ function inline(str) {
     if (m[2] !== undefined)
       nodes.push(<strong key={k++} className="font-semibold text-slate-900">{m[2]}</strong>);
     else if (m[3] !== undefined)
-      nodes.push(<code key={k++} className="px-1 py-0.5 rounded bg-slate-100 text-indigo-700 font-mono text-xs">{m[3]}</code>);
+      nodes.push(<em key={k++} className="italic">{m[3]}</em>);
+    else if (m[4] !== undefined)
+      nodes.push(<code key={k++} className="px-1 py-0.5 rounded bg-slate-100 text-indigo-700 font-mono text-xs">{m[4]}</code>);
     rest = rest.slice(idx + m[0].length);
   }
   if (rest) nodes.push(rest);
@@ -351,6 +356,11 @@ function MarkdownLite({ text }) {
       out.push(<h2 key={key++} className="font-serif text-xl text-slate-900 mt-5 mb-2">{inline(line.slice(2))}</h2>);
       i++; continue;
     }
+    // horizontal rule: --- or *** or ___ alone on a line
+    if (/^(\s*[-*_]){3,}\s*$/.test(line) && !line.trim().startsWith("- ")) {
+      out.push(<hr key={key++} className="my-4 border-slate-200" />);
+      i++; continue;
+    }
     if (line.trim().startsWith("- ")) {
       const items = [];
       while (i < lines.length && lines[i].trim().startsWith("- ")) { items.push(lines[i].trim().slice(2)); i++; }
@@ -361,13 +371,48 @@ function MarkdownLite({ text }) {
       );
       continue;
     }
+    // table
+    if (line.trim().startsWith("|")) {
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) { rows.push(lines[i]); i++; }
+      const isSep = (r) => /^\s*\|(\s*[-:]+\s*\|)+\s*$/.test(r);
+      const dataRows = rows.filter((r) => !isSep(r));
+      const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      if (dataRows.length > 0) {
+        out.push(
+          <div key={key++} className="overflow-x-auto my-3">
+            <table className="min-w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-100">
+                  {cells(dataRows[0]).map((c, ci) => (
+                    <th key={ci} className="border border-slate-200 px-3 py-1.5 text-left font-semibold text-slate-800">{inline(c)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dataRows.slice(1).map((r, ri) => (
+                  <tr key={ri} className={ri % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                    {cells(r).map((c, ci) => (
+                      <td key={ci} className="border border-slate-200 px-3 py-1.5 text-slate-700">{inline(c)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      continue;
+    }
     if (line.trim() === "") { i++; continue; }
     const buf = [line];
     i++;
     while (
       i < lines.length && lines[i].trim() !== "" &&
       !lines[i].startsWith("## ") && !lines[i].startsWith("# ") &&
-      !lines[i].trim().startsWith("- ") && !lines[i].trim().startsWith("```")
+      !lines[i].trim().startsWith("- ") && !lines[i].trim().startsWith("```") &&
+      !lines[i].trim().startsWith("|") &&
+      !/^(\s*[-*_]){3,}\s*$/.test(lines[i])
     ) { buf.push(lines[i]); i++; }
     out.push(<p key={key++} className="text-slate-700 leading-relaxed my-2">{inline(buf.join(" "))}</p>);
   }
@@ -487,6 +532,9 @@ export default function App() {
   }
 
   function applyPlacement(parsed, q) {
+    if (parsed.fits === "none") {
+      return { mods: modules, ans: parsed.answer || "", placementText: "", targetLessonId: null };
+    }
     const mods = modules.map((m) => ({ ...m, lessons: m.lessons.map((l) => ({ ...l })) }));
     const ans = parsed.answer || "";
     let mod = mods.find((m) => m.id === parsed.moduleId);
